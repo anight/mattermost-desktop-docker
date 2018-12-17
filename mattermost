@@ -1,0 +1,42 @@
+#! /bin/bash
+
+# The lock file, because we want only one instance of Mattermost
+LOCKFILE=${XDG_RUNTIME_DIR}/Mattermost.lock
+LOCKFD=99
+
+_lock()             { flock -$1 ${LOCKFD}; }
+_prepare_locking()  { eval "exec ${LOCKFD}>\"${LOCKFILE}\""; }
+exlock_now()        { _lock xn; }
+exlock()            { _lock x; }
+shlock()            { _lock s; }
+unlock()            { _lock u; }
+
+if [ -n "$STY" ] ; then
+
+	# Ensure we have only one copy of Mattermost running
+	_prepare_locking
+	exlock_now || {
+		# There is another Mattermost running - switch to it
+		wmctrl -i -R $(wmctrl -l | grep "Mattermost" | head -1 | cut -d ' ' -f 1)
+		exit 0
+	}
+
+	# Run the Mattermost
+	docker run -ti --rm --name mattermost \
+		--device /dev/dri --device /dev/snd \
+		--net host \
+		-e LANG="en_US.UTF-8" \
+		-e DISPLAY=${DISPLAY} \
+		-v ${HOME}:${HOME} \
+		-v /etc/localtime:/etc/localtime:ro \
+		-v ${HOME}/.icons/default:/usr/share/icons/Adwaita:ro \
+		-v /etc/machine-id:/etc/machine-id:ro \
+		-v /var/run/dbus:/var/run/dbus \
+		-v /tmp/.X11-unix:/tmp/.X11-unix \
+		anight/mattermost-desktop $@
+
+else
+	# Run the code above in screen session
+	screen -dmS mattermost $0 $@
+fi
+
